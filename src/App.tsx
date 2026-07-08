@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Group, Service, CheckHistory, Alert, MockEndpoint } from './types.js';
 import GroupManager from './components/GroupManager.js';
 import ServiceCreator from './components/ServiceCreator.js';
+import DriveSyncSettings from './components/DriveSyncSettings.js';
 import RealtimeDashboard from './components/RealtimeDashboard.js';
 import MockApiManager from './components/MockApiManager.js';
 import SimpleMonitor from './components/SimpleMonitor.js';
@@ -425,6 +426,9 @@ export default function App() {
                 onUpdateService={handleUpdateService}
                 mockEndpoints={mockEndpoints}
               />
+
+              {/* Google Drive automatic hourly sync panel */}
+              <DriveSyncSettings />
             </motion.div>
           )}
 

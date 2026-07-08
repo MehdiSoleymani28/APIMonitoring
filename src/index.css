@@ -65,8 +65,17 @@ body {
   color: #f3f4f6 !important;
 }
 
+.dark .bg-slate-50 {
+  background-color: #0f172a !important;
+  color: #f3f4f6 !important;
+}
+
 .dark .bg-slate-50\/80 {
   background-color: #0f172a !important;
+}
+
+.dark .bg-slate-50\/50 {
+  background-color: rgba(15, 23, 42, 0.5) !important;
 }
 
 .dark .text-slate-900 {
@@ -86,15 +95,21 @@ body {
 }
 
 .dark .text-slate-500 {
-  color: #6b7280 !important;
+  color: #94a3b8 !important;
 }
 
 .dark .text-slate-400 {
-  color: #4b5563 !important;
+  color: #cbd5e1 !important;
 }
 
 .dark .border-slate-100 {
   border-color: #1e293b !important;
+}
+
+.dark .border-slate-100\/80,
+.dark .border-slate-100\/60,
+.dark .border-slate-200\/50 {
+  border-color: rgba(30, 41, 59, 0.6) !important;
 }
 
 .dark .border-slate-200 {
@@ -105,6 +120,11 @@ body {
   background-color: #0f172a !important;
   color: #ffffff !important;
   border-color: #334155 !important;
+}
+
+.dark select option {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
 }
 
 .dark input:focus, .dark select:focus, .dark textarea:focus {
@@ -129,21 +149,38 @@ body {
   background-color: #334155 !important;
 }
 
+/* Method Badges */
+.dark .bg-sky-50 {
+  background-color: rgba(14, 165, 233, 0.15) !important;
+  color: #bae6fd !important;
+}
+.dark .text-sky-700 {
+  color: #38bdf8 !important;
+}
+.dark .border-sky-100 {
+  border-color: rgba(14, 165, 233, 0.25) !important;
+}
+
+.dark .bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.15) !important;
+  color: #99f6e4 !important;
+}
+.dark .text-teal-700 {
+  color: #2dd4bf !important;
+}
+.dark .border-teal-100 {
+  border-color: rgba(20, 184, 166, 0.25) !important;
+}
+
 .dark .bg-indigo-50 {
-  background-color: #1e1b4b !important;
+  background-color: rgba(99, 102, 241, 0.15) !important;
   color: #c7d2fe !important;
 }
-
-.dark .text-indigo-900 {
-  color: #e0e7ff !important;
-}
-
-.dark .text-indigo-800 {
-  color: #c7d2fe !important;
-}
-
 .dark .text-indigo-700 {
   color: #818cf8 !important;
+}
+.dark .border-indigo-100 {
+  border-color: rgba(99, 102, 241, 0.25) !important;
 }
 
 .dark .bg-indigo-50\/20 {
@@ -154,24 +191,46 @@ body {
   border-color: rgba(99, 102, 241, 0.25) !important;
 }
 
+/* Metric / Sparkline Sub-badges */
+.dark .bg-indigo-100\/60 {
+  background-color: rgba(99, 102, 241, 0.25) !important;
+  color: #c7d2fe !important;
+}
+.dark .bg-indigo-100\/40 {
+  background-color: rgba(99, 102, 241, 0.15) !important;
+  color: #c7d2fe !important;
+}
+
+/* Warning & Alerts (Amber) */
 .dark .bg-amber-50\/40 {
   background-color: rgba(245, 158, 11, 0.1) !important;
 }
 
 .dark .border-amber-100 {
-  border-color: rgba(245, 158, 11, 0.2) !important;
+  border-color: rgba(245, 158, 11, 0.25) !important;
 }
 
 .dark .bg-amber-50\/20 {
   background-color: rgba(245, 158, 11, 0.05) !important;
 }
 
+.dark .bg-amber-50\/30 {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+  border-color: rgba(245, 158, 11, 0.25) !important;
+  color: #fde047 !important;
+}
+
 .dark .border-amber-100\/40 {
-  border-color: rgba(245, 158, 11, 0.1) !important;
+  border-color: rgba(245, 158, 11, 0.15) !important;
 }
 
 .dark .bg-amber-50 {
   background-color: #451a03 !important;
+  color: #fef3c7 !important;
+}
+
+.dark .bg-amber-100 {
+  background-color: #78350f !important;
   color: #fef3c7 !important;
 }
 
@@ -183,7 +242,27 @@ body {
   color: #fde047 !important;
 }
 
+.dark .text-amber-900 {
+  color: #fef3c7 !important;
+}
+
+/* Success & Active (Emerald) */
 .dark .bg-emerald-50 {
+  background-color: #064e3b !important;
+  color: #d1fae5 !important;
+}
+
+.dark .bg-emerald-50\/30 {
+  background-color: rgba(16, 185, 129, 0.08) !important;
+  border-color: rgba(16, 185, 129, 0.25) !important;
+  color: #a7f3d0 !important;
+}
+
+.dark .bg-emerald-50\/10 {
+  background-color: rgba(16, 185, 129, 0.05) !important;
+}
+
+.dark .bg-emerald-100 {
   background-color: #064e3b !important;
   color: #d1fae5 !important;
 }
@@ -196,7 +275,31 @@ body {
   color: #10b981 !important;
 }
 
+.dark .text-emerald-900 {
+  color: #d1fae5 !important;
+}
+
+.dark .border-emerald-100 {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+/* Error & Off (Rose) */
 .dark .bg-rose-50 {
+  background-color: #4c0519 !important;
+  color: #ffe4e6 !important;
+}
+
+.dark .bg-rose-50\/30 {
+  background-color: rgba(244, 63, 94, 0.08) !important;
+  border-color: rgba(244, 63, 94, 0.25) !important;
+  color: #fecdd3 !important;
+}
+
+.dark .bg-rose-50\/10 {
+  background-color: rgba(244, 63, 94, 0.05) !important;
+}
+
+.dark .bg-rose-100 {
   background-color: #4c0519 !important;
   color: #ffe4e6 !important;
 }
@@ -209,8 +312,12 @@ body {
   color: #f43f5e !important;
 }
 
-.dark .bg-rose-50\/10 {
-  background-color: rgba(244, 63, 94, 0.1) !important;
+.dark .text-rose-900 {
+  color: #ffe4e6 !important;
+}
+
+.dark .border-rose-100 {
+  border-color: rgba(244, 63, 94, 0.25) !important;
 }
 
 .dark .border-rose-100\/50 {

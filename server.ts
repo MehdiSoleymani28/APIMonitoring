@@ -9,12 +9,30 @@ import { Group, Service, CheckHistory, Alert, MockEndpoint } from './src/types.j
 const DB_FILE = path.join(process.cwd(), 'db.json');
 
 // Interface for our database structure
+interface DriveSyncConfig {
+  accessToken: string;
+  enabled: boolean;
+  lastSyncTime?: string;
+  lastSyncStatus?: 'SUCCESS' | 'FAILED' | 'PENDING' | 'NOT_CONFIGURED';
+  lastSyncMessage?: string;
+}
+
+interface DriveSyncHistory {
+  id: string;
+  timestamp: string;
+  success: boolean;
+  message: string;
+  filename: string;
+}
+
 interface DatabaseSchema {
   groups: Group[];
   services: Service[];
   alerts: Alert[];
   history: CheckHistory[];
   mockEndpoints: MockEndpoint[];
+  driveSync?: DriveSyncConfig;
+  driveSyncHistory?: DriveSyncHistory[];
 }
 
 // Initial/default seed data
@@ -97,7 +115,13 @@ const DEFAULT_DB: DatabaseSchema = {
         cached_keys: true
       }, null, 2)
     }
-  ]
+  ],
+  driveSync: {
+    accessToken: '',
+    enabled: false,
+    lastSyncStatus: 'NOT_CONFIGURED'
+  },
+  driveSyncHistory: []
 };
 
 // State container
@@ -114,7 +138,9 @@ function loadDb() {
         services: parsed.services || DEFAULT_DB.services,
         alerts: parsed.alerts || DEFAULT_DB.alerts,
         history: parsed.history || DEFAULT_DB.history,
-        mockEndpoints: parsed.mockEndpoints || DEFAULT_DB.mockEndpoints
+        mockEndpoints: parsed.mockEndpoints || DEFAULT_DB.mockEndpoints,
+        driveSync: parsed.driveSync || DEFAULT_DB.driveSync,
+        driveSyncHistory: parsed.driveSyncHistory || DEFAULT_DB.driveSyncHistory
       };
       console.log('Database loaded successfully from', DB_FILE);
     } else {
@@ -417,6 +443,216 @@ async function checkService(service: Service) {
   }
 
   saveDb();
+}
+
+// --- Google Drive Log Syncing Utilities ---
+
+async function uploadLogToGoogleDrive(token: string, content: string, filename: string): Promise<{ fileId: string }> {
+  // 1. Create file metadata in Drive
+  const metaResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: filename,
+      mimeType: 'text/plain',
+      description: 'گزارش خودکار سیستم مانیتورینگ وب‌سرویس‌ها'
+    })
+  });
+
+  if (!metaResponse.ok) {
+    const errText = await metaResponse.text();
+    throw new Error(`خطا در ایجاد فایل در گوگل درایو: ${metaResponse.status} - ${errText}`);
+  }
+
+  const fileData = (await metaResponse.json()) as any;
+  const fileId = fileData.id;
+
+  // 2. Upload actual file content via media endpoint
+  const uploadResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'text/plain; charset=utf-8'
+    },
+    body: content
+  });
+
+  if (!uploadResponse.ok) {
+    const errText = await uploadResponse.text();
+    throw new Error(`خطا در آپلود محتوای فایل به گوگل درایو: ${uploadResponse.status} - ${errText}`);
+  }
+
+  return { fileId };
+}
+
+function generateLogReportContent(): string {
+  const now = new Date();
+  const timeFa = now.toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' });
+  const timeIso = now.toISOString();
+
+  const totalGroups = db.groups.length;
+  const totalServices = db.services.length;
+  const upServices = db.services.filter(s => s.status === 'UP').length;
+  const warnServices = db.services.filter(s => s.status === 'WARN').length;
+  const downServices = db.services.filter(s => s.status === 'DOWN').length;
+  const unknownServices = db.services.filter(s => s.status === 'UNKNOWN' || !s.status).length;
+  
+  const activeAlerts = db.alerts.filter(a => !a.resolved);
+  const totalAlerts = activeAlerts.length;
+
+  let report = `========================================================================
+            گزارش هوشمند وضعیت و لاگ‌های سیستم مانیتورینگ وب‌سرویس‌ها
+========================================================================
+زمان ثبت گزارش (ایران): ${timeFa}
+زمان ثبت گزارش (ISO): ${timeIso}
+
+وضعیت کلی سیستم مانیتورینگ:
+-----------------------------------------
+تعداد کل گروه‌های وب‌سرویس: ${totalGroups}
+تعداد کل وب‌سرویس‌های تعریف شده: ${totalServices}
+  - تعداد وب‌سرویس‌های فعال (UP): ${upServices}
+  - تعداد وب‌سرویس‌های دارای هشدار (WARN): ${warnServices}
+  - تعداد وب‌سرویس‌های قطع شده (DOWN): ${downServices}
+  - تعداد وب‌سرویس‌های نامشخص: ${unknownServices}
+تعداد هشدارهای فعال و برطرف‌نشده: ${totalAlerts}
+
+========================================================================
+                      لیست هشدارهای فعال و برطرف‌نشده
+========================================================================
+`;
+
+  if (totalAlerts > 0) {
+    activeAlerts.forEach((a, i) => {
+      report += `${i + 1}. سرویس: ${a.serviceName} | گروه: ${a.groupName} | نوع خطا: ${a.type} | زمان: ${a.timestamp}
+   جزئیات خطا: ${a.message}
+------------------------------------------------------------------------\n`;
+    });
+  } else {
+    report += `هیچ هشدار فعالی در سیستم ثبت نشده است و تمام سرویس‌ها در وضعیت پایدار (UP) هستند.\n`;
+  }
+
+  report += `\n========================================================================
+                       لاگ‌های اخیر بررسی وب‌سرویس‌ها (آخرین ۱۰۰ مورد)
+========================================================================\n`;
+
+  // Sort history newest first, and take latest 100
+  const sortedHistory = [...db.history].reverse().slice(0, 100);
+
+  if (sortedHistory.length > 0) {
+    sortedHistory.forEach((h, i) => {
+      const service = db.services.find(s => s.id === h.serviceId);
+      const serviceName = service ? service.name : `سرویس نامشخص (شناسه: ${h.serviceId})`;
+      
+      report += `[${h.timestamp}] - سرویس: ${serviceName}
+  وضعیت: ${h.status} | کد وضعیت HTTP: ${h.statusCode || '—'} | زمان پاسخ: ${h.responseTime} میلی‌ثانیه
+`;
+      if (h.fieldValue !== undefined && h.fieldValue !== null) {
+        report += `  مقدار فیلد رصد شده: ${JSON.stringify(h.fieldValue)}\n`;
+      }
+      if (h.errorMessage) {
+        report += `  شرح خطا: ${h.errorMessage}\n`;
+      }
+      report += `------------------------------------------------------------------------\n`;
+    });
+  } else {
+    report += `هیچ تاریخچه بررسی یا لاگی در سیستم ثبت نشده است.\n`;
+  }
+
+  return report;
+}
+
+async function syncWithGoogleDrive(manualToken?: string): Promise<{ success: boolean; message: string; filename: string }> {
+  const config = db.driveSync || { accessToken: '', enabled: false };
+  const token = manualToken || config.accessToken;
+
+  if (!token) {
+    const errorMsg = 'تنظیمات گوگل درایو کامل نیست یا توکن معتبر یافت نشد. لطفاً مجدداً لاگین کنید.';
+    if (db.driveSync) {
+      db.driveSync.lastSyncStatus = 'FAILED';
+      db.driveSync.lastSyncMessage = errorMsg;
+      db.driveSync.lastSyncTime = new Date().toISOString();
+    }
+    saveDb();
+    return { success: false, message: errorMsg, filename: '' };
+  }
+
+  const now = new Date();
+  // Safe filename with date and time
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const filename = `ServiceMonitor_Log_${year}-${month}-${day}_${hours}-${minutes}.txt`;
+
+  try {
+    const content = generateLogReportContent();
+    await uploadLogToGoogleDrive(token, content, filename);
+
+    const successMsg = 'آپلود فایل لاگ به گوگل درایو با موفقیت انجام شد';
+    
+    // Update config
+    db.driveSync = {
+      accessToken: token,
+      enabled: config.enabled,
+      lastSyncStatus: 'SUCCESS',
+      lastSyncTime: now.toISOString(),
+      lastSyncMessage: successMsg
+    };
+
+    // Add to history
+    if (!db.driveSyncHistory) {
+      db.driveSyncHistory = [];
+    }
+    const newHistoryItem = {
+      id: generateId(),
+      timestamp: now.toISOString(),
+      success: true,
+      message: successMsg,
+      filename
+    };
+    db.driveSyncHistory.unshift(newHistoryItem);
+    
+    // Cap history size to 30 records
+    if (db.driveSyncHistory.length > 30) {
+      db.driveSyncHistory.pop();
+    }
+
+    saveDb();
+    return { success: true, message: successMsg, filename };
+  } catch (error: any) {
+    console.error('Google Drive sync error:', error);
+    const failMsg = `خطا در همگام‌سازی: ${error.message}`;
+
+    db.driveSync = {
+      accessToken: token,
+      enabled: config.enabled,
+      lastSyncStatus: 'FAILED',
+      lastSyncTime: now.toISOString(),
+      lastSyncMessage: failMsg
+    };
+
+    if (!db.driveSyncHistory) {
+      db.driveSyncHistory = [];
+    }
+    db.driveSyncHistory.unshift({
+      id: generateId(),
+      timestamp: now.toISOString(),
+      success: false,
+      message: failMsg,
+      filename
+    });
+
+    if (db.driveSyncHistory.length > 30) {
+      db.driveSyncHistory.pop();
+    }
+
+    saveDb();
+    return { success: false, message: failMsg, filename };
+  }
 }
 
 async function startServer() {
@@ -823,6 +1059,92 @@ async function startServer() {
       res.send(mock.responseBody);
     }
   });
+
+
+  // 9. Google Drive Integration APIs
+  app.get('/api/drive/status', (req, res) => {
+    const config = db.driveSync || { accessToken: '', enabled: false, lastSyncStatus: 'NOT_CONFIGURED' };
+    res.json({
+      enabled: config.enabled,
+      lastSyncTime: config.lastSyncTime || null,
+      lastSyncStatus: config.lastSyncStatus || 'NOT_CONFIGURED',
+      lastSyncMessage: config.lastSyncMessage || '',
+      hasToken: !!config.accessToken,
+      history: db.driveSyncHistory || []
+    });
+  });
+
+  app.post('/api/drive/config', async (req, res) => {
+    const { accessToken, enabled } = req.body;
+    
+    // Maintain existing token if not provided but enabled
+    const existingConfig = db.driveSync || { accessToken: '', enabled: false, lastSyncStatus: 'NOT_CONFIGURED' };
+    const newToken = accessToken !== undefined ? accessToken : existingConfig.accessToken;
+    const newEnabled = enabled !== undefined ? !!enabled : existingConfig.enabled;
+
+    db.driveSync = {
+      accessToken: newToken,
+      enabled: newEnabled,
+      lastSyncStatus: existingConfig.lastSyncStatus || 'NOT_CONFIGURED',
+      lastSyncTime: existingConfig.lastSyncTime,
+      lastSyncMessage: existingConfig.lastSyncMessage
+    };
+
+    saveDb();
+
+    // If newly enabled and has a token, perform sync immediately as verification
+    if (newEnabled && newToken) {
+      const syncResult = await syncWithGoogleDrive(newToken);
+      return res.json({
+        success: syncResult.success,
+        message: syncResult.message,
+        config: {
+          enabled: db.driveSync.enabled,
+          lastSyncTime: db.driveSync.lastSyncTime,
+          lastSyncStatus: db.driveSync.lastSyncStatus,
+          lastSyncMessage: db.driveSync.lastSyncMessage,
+          hasToken: !!db.driveSync.accessToken
+        },
+        history: db.driveSyncHistory || []
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'تنظیمات گوگل درایو با موفقیت ذخیره شد',
+      config: {
+        enabled: db.driveSync.enabled,
+        lastSyncTime: db.driveSync.lastSyncTime,
+        lastSyncStatus: db.driveSync.lastSyncStatus,
+        lastSyncMessage: db.driveSync.lastSyncMessage,
+        hasToken: !!db.driveSync.accessToken
+      },
+      history: db.driveSyncHistory || []
+    });
+  });
+
+  app.post('/api/drive/sync-now', async (req, res) => {
+    const { accessToken } = req.body;
+    const result = await syncWithGoogleDrive(accessToken);
+    res.json(result);
+  });
+
+
+  // --- Google Drive Hourly Scheduled Sync ---
+  setInterval(async () => {
+    if (db.driveSync && db.driveSync.enabled && db.driveSync.accessToken) {
+      console.log('[Scheduler] Executing automated hourly Google Drive sync...');
+      await syncWithGoogleDrive();
+    }
+  }, 60 * 60 * 1000); // 1 hour (3600000 ms)
+
+  // Perform initial sync if enabled after 10s startup delay
+  setTimeout(async () => {
+    if (db.driveSync && db.driveSync.enabled && db.driveSync.accessToken) {
+      console.log('[Startup] Executing initial Google Drive sync...');
+      await syncWithGoogleDrive();
+    }
+  }, 10000);
 
 
   // --- Vite / Static Assets setup ---
