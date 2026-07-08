@@ -61,14 +61,26 @@ export default function App() {
     };
   }, []);
 
+  const fetchJson = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error(`Response is not JSON! content-type: ${contentType}`);
+    }
+    return res.json();
+  };
+
   const fetchAllData = async () => {
     try {
       const [groupsRes, servicesRes, historyRes, alertsRes, mockRes] = await Promise.all([
-        fetch('/api/groups').then(r => r.json()),
-        fetch('/api/services').then(r => r.json()),
-        fetch('/api/history').then(r => r.json()),
-        fetch('/api/alerts').then(r => r.json()),
-        fetch('/api/mock-endpoints').then(r => r.json())
+        fetchJson('/api/groups'),
+        fetchJson('/api/services'),
+        fetchJson('/api/history'),
+        fetchJson('/api/alerts'),
+        fetchJson('/api/mock-endpoints')
       ]);
 
       setGroups(groupsRes);
@@ -85,9 +97,9 @@ export default function App() {
   const fetchPollingData = async () => {
     try {
       const [servicesRes, historyRes, alertsRes] = await Promise.all([
-        fetch('/api/services').then(r => r.json()),
-        fetch('/api/history').then(r => r.json()),
-        fetch('/api/alerts').then(r => r.json())
+        fetchJson('/api/services'),
+        fetchJson('/api/history'),
+        fetchJson('/api/alerts')
       ]);
 
       setServices(servicesRes);
