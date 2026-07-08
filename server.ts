@@ -322,6 +322,30 @@ async function checkService(service: Service) {
           }
         }
       }
+
+      // 2b. Evaluate Custom Numeric Thresholds
+      if (checkStatus === 'UP' && service.numericThresholds && service.numericThresholds.length > 0 && responseData) {
+        for (const threshold of service.numericThresholds) {
+          const val = getValueByPath(responseData, threshold.fieldPath);
+          if (val !== undefined && val !== null) {
+            const numVal = Number(val);
+            if (!isNaN(numVal)) {
+              const min = threshold.min !== undefined && threshold.min !== null ? Number(threshold.min) : null;
+              const max = threshold.max !== undefined && threshold.max !== null ? Number(threshold.max) : null;
+
+              if (min !== null && numVal < min) {
+                checkStatus = 'WARN';
+                errMsg = `حد آستانه حداقل فیلد "${threshold.label || threshold.fieldPath}" نقض شد. مقدار جاری: ${numVal} (حداقل مجاز: ${min})`;
+                break;
+              } else if (max !== null && numVal > max) {
+                checkStatus = 'WARN';
+                errMsg = `حد آستانه حداکثر فیلد "${threshold.label || threshold.fieldPath}" نقض شد. مقدار جاری: ${numVal} (حداکثر مجاز: ${max})`;
+                break;
+              }
+            }
+          }
+        }
+      }
     }
     
     // 3. Response Time Check
@@ -508,7 +532,8 @@ async function startServer() {
       responseTimeThreshold,
       monitorType,
       minRange,
-      maxRange
+      maxRange,
+      numericThresholds
     } = req.body;
 
     if (!groupId || !name || !url) {
@@ -530,7 +555,8 @@ async function startServer() {
       status: 'UNKNOWN',
       monitorType: monitorType || (monitorField ? 'FIELD_MATCH' : 'STATUS_ONLY'),
       minRange: minRange !== undefined && minRange !== '' ? Number(minRange) : undefined,
-      maxRange: maxRange !== undefined && maxRange !== '' ? Number(maxRange) : undefined
+      maxRange: maxRange !== undefined && maxRange !== '' ? Number(maxRange) : undefined,
+      numericThresholds: numericThresholds || []
     };
 
     db.services.push(newService);
@@ -540,6 +566,57 @@ async function startServer() {
     checkService(newService).catch(console.error);
 
     res.status(201).json(newService);
+  });
+
+  app.put('/api/services/:id', (req, res) => {
+    const { id } = req.params;
+    const service = db.services.find(s => s.id === id);
+    if (!service) {
+      return res.status(404).json({ error: 'سرویس یافت نشد' });
+    }
+
+    const {
+      groupId,
+      name,
+      url,
+      method,
+      headers,
+      body,
+      monitorField,
+      expectedValue,
+      checkInterval,
+      responseTimeThreshold,
+      monitorType,
+      minRange,
+      maxRange,
+      numericThresholds
+    } = req.body;
+
+    if (groupId !== undefined) service.groupId = groupId;
+    if (name !== undefined) service.name = name;
+    if (url !== undefined) service.url = url;
+    if (method !== undefined) service.method = method;
+    if (headers !== undefined) service.headers = headers;
+    if (body !== undefined) service.body = body;
+    if (monitorField !== undefined) service.monitorField = monitorField;
+    if (expectedValue !== undefined) service.expectedValue = String(expectedValue);
+    if (checkInterval !== undefined) service.checkInterval = Number(checkInterval);
+    if (responseTimeThreshold !== undefined) service.responseTimeThreshold = Number(responseTimeThreshold);
+    if (monitorType !== undefined) service.monitorType = monitorType;
+    
+    service.minRange = minRange !== undefined && minRange !== '' && minRange !== null ? Number(minRange) : undefined;
+    service.maxRange = maxRange !== undefined && maxRange !== '' && maxRange !== null ? Number(maxRange) : undefined;
+    
+    if (numericThresholds !== undefined) {
+      service.numericThresholds = numericThresholds;
+    }
+
+    saveDb();
+
+    // Perform an immediate initial check to refresh status based on new thresholds
+    checkService(service).catch(console.error);
+
+    res.json(service);
   });
 
   app.delete('/api/services/:id', (req, res) => {

@@ -5,6 +5,14 @@ export interface Group {
   tokenUpdatedAt: string; // ISO string
 }
 
+export interface NumericThreshold {
+  id: string;
+  fieldPath: string; // JSON path like "data.cpu" or "system.memory"
+  label: string; // friendly description
+  min?: number;
+  max?: number;
+}
+
 export interface Service {
   id: string;
   groupId: string;
@@ -22,6 +30,7 @@ export interface Service {
   monitorType?: 'STATISTICAL' | 'FIELD_MATCH' | 'STATUS_ONLY';
   minRange?: number;
   maxRange?: number;
+  numericThresholds?: NumericThreshold[];
 }
 
 export interface CheckHistory {

@@ -13,6 +13,23 @@ type ActiveTab = 'dashboard' | 'simple-monitor' | 'config' | 'mock-api';
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('theme');
+    return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
+
+  // Dark mode class sync effect
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [darkMode]);
+
   // App data states
   const [groups, setGroups] = useState<Group[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -134,6 +151,20 @@ export default function App() {
     }
   };
 
+  const handleUpdateService = async (serviceId: string, serviceData: any) => {
+    const response = await fetch(`/api/services/${serviceId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serviceData)
+    });
+    if (response.ok) {
+      const updatedService = await response.json();
+      setServices(services.map(s => s.id === serviceId ? updatedService : s));
+      // Refetch history and alerts
+      fetchPollingData();
+    }
+  };
+
   const handleDeleteService = async (serviceId: string) => {
     const response = await fetch(`/api/services/${serviceId}`, {
       method: 'DELETE'
@@ -227,13 +258,27 @@ export default function App() {
             </div>
           </div>
 
-          {/* Time and Date Section */}
-          <div className="flex items-center gap-4 bg-slate-50/80 px-4 py-1.5 rounded-xl border border-slate-100">
-            <div className="text-right">
-              <p className="text-[10px] text-slate-400 font-medium">{formattedDateStr}</p>
-              <p className="text-xs font-black font-mono text-slate-700 text-center sm:text-left mt-0.5">{formattedTimeStr}</p>
+          {/* Time, Date and Theme Toggle Section */}
+          <div className="flex items-center gap-3">
+            {/* Theme Toggle Button */}
+            <button
+              id="btn-toggle-theme"
+              type="button"
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2 text-slate-500 hover:text-indigo-600 bg-slate-50/80 hover:bg-indigo-50/20 rounded-xl border border-slate-100 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title={darkMode ? "تغییر به حالت روشن" : "تغییر به حالت تاریک"}
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-500 transition-transform duration-500 hover:rotate-90" /> : <Moon className="w-4 h-4 text-indigo-600 transition-transform duration-500 hover:-rotate-12" />}
+            </button>
+
+            {/* Time and Date Section */}
+            <div className="flex items-center gap-4 bg-slate-50/80 px-4 py-1.5 rounded-xl border border-slate-100">
+              <div className="text-right">
+                <p className="text-[10px] text-slate-400 font-medium">{formattedDateStr}</p>
+                <p className="text-xs font-black font-mono text-slate-700 text-center sm:text-left mt-0.5">{formattedTimeStr}</p>
+              </div>
+              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
             </div>
-            <Clock className="w-4 h-4 text-slate-400 shrink-0" />
           </div>
         </div>
       </header>
@@ -375,7 +420,9 @@ export default function App() {
               {/* Service Creator & Response JSON analyzer */}
               <ServiceCreator
                 groups={groups}
+                services={services}
                 onAddService={handleAddService}
+                onUpdateService={handleUpdateService}
                 mockEndpoints={mockEndpoints}
               />
             </motion.div>

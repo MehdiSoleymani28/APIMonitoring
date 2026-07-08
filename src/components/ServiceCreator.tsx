@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Group, Service } from '../types.js';
-import { Play, Plus, Trash2, HelpCircle, Code, ShieldAlert, CheckCircle, Clock, Check } from 'lucide-react';
+import { Group, Service, NumericThreshold } from '../types.js';
+import { Play, Plus, Trash2, HelpCircle, Code, ShieldAlert, CheckCircle, Clock, Check, Sliders } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface ServiceCreatorProps {
   groups: Group[];
+  services: Service[];
   onAddService: (serviceData: any) => Promise<void>;
+  onUpdateService: (serviceId: string, updatedData: any) => Promise<void>;
   mockEndpoints: any[];
 }
 
-export default function ServiceCreator({ groups, onAddService, mockEndpoints }: ServiceCreatorProps) {
+export default function ServiceCreator({ groups, services, onAddService, onUpdateService, mockEndpoints }: ServiceCreatorProps) {
+  // Mode selection: NEW vs existing service ID
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('NEW');
+
   // Service definition states
   const [groupId, setGroupId] = useState('');
   const [name, setName] = useState('');
@@ -27,6 +32,16 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
   const [responseTimeThreshold, setResponseTimeThreshold] = useState(300); // in ms
   const [monitorType, setMonitorType] = useState<'STATUS_ONLY' | 'FIELD_MATCH' | 'STATISTICAL'>('STATUS_ONLY');
 
+  // Custom numeric thresholds state
+  const [numericThresholds, setNumericThresholds] = useState<NumericThreshold[]>([]);
+  const [useNumericThresholds, setUseNumericThresholds] = useState(false);
+  
+  // Threshold add states
+  const [newThreshFieldPath, setNewThreshFieldPath] = useState('');
+  const [newThreshLabel, setNewThreshLabel] = useState('');
+  const [newThreshMin, setNewThreshMin] = useState('');
+  const [newThreshMax, setNewThreshMax] = useState('');
+
   // Sync monitorType automatically based on monitorField presence
   useEffect(() => {
     if (!monitorField) {
@@ -35,6 +50,51 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
       setMonitorType('FIELD_MATCH');
     }
   }, [monitorField]);
+
+  // Load selected service details
+  useEffect(() => {
+    if (selectedServiceId === 'NEW') {
+      // Reset to defaults
+      setGroupId(groups[0]?.id || '');
+      setName('');
+      setUrl('');
+      setMethod('GET');
+      setHeaders([]);
+      setBody('');
+      setMonitorField('');
+      setExpectedValue('');
+      setMinRange('');
+      setMaxRange('');
+      setCheckInterval(10);
+      setResponseTimeThreshold(300);
+      setMonitorType('STATUS_ONLY');
+      setNumericThresholds([]);
+      setUseNumericThresholds(false);
+      setTestResult(null);
+      setExtractedPaths([]);
+    } else {
+      const s = services.find(serv => serv.id === selectedServiceId);
+      if (s) {
+        setGroupId(s.groupId);
+        setName(s.name);
+        setUrl(s.url);
+        setMethod(s.method);
+        setHeaders(s.headers || []);
+        setBody(s.body || '');
+        setMonitorField(s.monitorField || '');
+        setExpectedValue(s.expectedValue || '');
+        setMinRange(s.minRange !== undefined ? String(s.minRange) : '');
+        setMaxRange(s.maxRange !== undefined ? String(s.maxRange) : '');
+        setCheckInterval(s.checkInterval);
+        setResponseTimeThreshold(s.responseTimeThreshold);
+        setMonitorType(s.monitorType || 'STATUS_ONLY');
+        setNumericThresholds(s.numericThresholds || []);
+        setUseNumericThresholds(s.numericThresholds && s.numericThresholds.length > 0 ? true : false);
+        setTestResult(null);
+        setExtractedPaths([]);
+      }
+    }
+  }, [selectedServiceId, services, groups]);
 
   // Test call states
   const [isTesting, setIsTesting] = useState(false);
@@ -82,6 +142,30 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
     return paths;
   };
 
+  // Extract numeric paths to suggest as thresholds
+  const getNumericPathsFromObject = (obj: any, prefix = ''): { path: string; value: number }[] => {
+    if (obj === null || obj === undefined) return [];
+    if (typeof obj === 'number') return [{ path: prefix, value: obj }];
+    if (typeof obj !== 'object') return [];
+    
+    let list: { path: string; value: number }[] = [];
+    for (const key of Object.keys(obj)) {
+      const newPrefix = prefix ? `${prefix}.${key}` : key;
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+        if (Array.isArray(obj[key])) {
+          if (obj[key].length > 0) {
+            list = list.concat(getNumericPathsFromObject(obj[key][0], `${newPrefix}[0]`));
+          }
+        } else {
+          list = list.concat(getNumericPathsFromObject(obj[key], newPrefix));
+        }
+      } else if (typeof obj[key] === 'number') {
+        list.push({ path: newPrefix, value: obj[key] });
+      }
+    }
+    return list;
+  };
+
   const handleAddHeader = () => {
     setHeaders([...headers, { key: '', value: '' }]);
   };
@@ -94,6 +178,45 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
     const updated = [...headers];
     updated[index][field] = val;
     setHeaders(updated);
+  };
+
+  const handleAddThreshold = () => {
+    if (!newThreshFieldPath.trim()) {
+      alert('لطفاً مسیر فیلد (JSON Path) را وارد کنید.');
+      return;
+    }
+    const label = newThreshLabel.trim() || newThreshFieldPath.trim();
+    const min = newThreshMin !== '' ? Number(newThreshMin) : undefined;
+    const max = newThreshMax !== '' ? Number(newThreshMax) : undefined;
+
+    if (min !== undefined && isNaN(min)) {
+      alert('مقدار حداقل وارد شده یک عدد معتبر نیست.');
+      return;
+    }
+    if (max !== undefined && isNaN(max)) {
+      alert('مقدار حداکثر وارد شده یک عدد معتبر نیست.');
+      return;
+    }
+
+    const newThresh: NumericThreshold = {
+      id: 't_' + Math.random().toString(36).substring(2, 9),
+      fieldPath: newThreshFieldPath.trim(),
+      label,
+      min,
+      max
+    };
+
+    setNumericThresholds([...numericThresholds, newThresh]);
+
+    // Reset inputs
+    setNewThreshFieldPath('');
+    setNewThreshLabel('');
+    setNewThreshMin('');
+    setNewThreshMax('');
+  };
+
+  const handleRemoveThreshold = (id: string) => {
+    setNumericThresholds(numericThresholds.filter(t => t.id !== id));
   };
 
   // Run proxy test call to server
@@ -165,7 +288,7 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
 
     setIsSubmitting(true);
     try {
-      await onAddService({
+      const payload = {
         groupId,
         name,
         url,
@@ -178,24 +301,35 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
         responseTimeThreshold,
         monitorType,
         minRange: minRange !== '' ? Number(minRange) : undefined,
-        maxRange: maxRange !== '' ? Number(maxRange) : undefined
-      });
+        maxRange: maxRange !== '' ? Number(maxRange) : undefined,
+        numericThresholds: useNumericThresholds ? numericThresholds : []
+      };
 
-      // Clear states
-      setName('');
-      setUrl('');
-      setMethod('GET');
-      setHeaders([]);
-      setBody('');
-      setMonitorField('');
-      setExpectedValue('');
-      setMinRange('');
-      setMaxRange('');
-      setMonitorType('STATUS_ONLY');
-      setTestResult(null);
-      setExtractedPaths([]);
-      
-      setSuccessMsg('وب‌سرویس جدید با موفقیت ثبت و فرآیند مانیتورینگ خودکار آن آغاز شد.');
+      if (selectedServiceId === 'NEW') {
+        await onAddService(payload);
+        
+        // Clear states
+        setName('');
+        setUrl('');
+        setMethod('GET');
+        setHeaders([]);
+        setBody('');
+        setMonitorField('');
+        setExpectedValue('');
+        setMinRange('');
+        setMaxRange('');
+        setMonitorType('STATUS_ONLY');
+        setNumericThresholds([]);
+        setUseNumericThresholds(false);
+        setTestResult(null);
+        setExtractedPaths([]);
+        
+        setSuccessMsg('وب‌سرویس جدید با موفقیت ثبت و فرآیند مانیتورینگ خودکار آن آغاز شد.');
+      } else {
+        await onUpdateService(selectedServiceId, payload);
+        setSuccessMsg('تنظیمات و آستانه هشدارهای وب‌سرویس با موفقیت بروزرسانی شد.');
+      }
+
       setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err) {
       console.error(err);
@@ -218,6 +352,60 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
         <p className="text-xs text-slate-500 mt-1">
           در این بخش جزئیات وب‌سرویس خود را ثبت کرده، آن را فراخوانی کنید و مشخص کنید مایلید وضعیت کدام یک از کلیدهای پاسخ مانیتور شود.
         </p>
+      </div>
+
+      {/* Selector for Service Mode: Create New vs Edit Existing */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-indigo-50/20 p-4 rounded-xl border border-indigo-100/30">
+        <div className="space-y-1">
+          <label className="block text-xs font-bold text-indigo-900">حالت کار با ابزار:</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedServiceId('NEW')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                selectedServiceId === 'NEW'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              ثبت وب‌سرویس جدید
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (services.length > 0) {
+                  setSelectedServiceId(services[0].id);
+                } else {
+                  alert('هیچ وب‌سرویسی یافت نشد. ابتدا یک وب‌سرویس ثبت کنید.');
+                }
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                selectedServiceId !== 'NEW'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              تعریف و ویرایش آستانه هشدارهای سرویس موجود
+            </button>
+          </div>
+        </div>
+
+        {selectedServiceId !== 'NEW' && (
+          <div className="space-y-1 w-full sm:w-72">
+            <label className="block text-xs font-bold text-slate-600">انتخاب وب‌سرویس جهت ویرایش:</label>
+            <select
+              value={selectedServiceId}
+              onChange={(e) => setSelectedServiceId(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-indigo-500 font-bold text-indigo-900"
+            >
+              {services.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.url})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {successMsg && (
@@ -660,6 +848,180 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
             </div>
           </div>
 
+          {/* Custom Numeric Alert Thresholds Settings Panel */}
+          <div className="border-t border-slate-100 pt-6 mt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+              <h4 className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                <Sliders className="w-4 h-4 text-indigo-600" />
+                تنظیمات حد آستانه هشدارهای عددی اختصاصی (Alert Thresholds)
+              </h4>
+
+              {/* Toggle switch */}
+              <label className="relative inline-flex items-center cursor-pointer select-none gap-2">
+                <span className="text-[11px] font-bold text-slate-600">فعال‌سازی آستانه هشدارهای عددی اختصاصی:</span>
+                <input
+                  type="checkbox"
+                  checked={useNumericThresholds}
+                  onChange={(e) => setUseNumericThresholds(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="relative w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:after:border-slate-600 peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            <p className="text-[10px] text-slate-500 leading-relaxed mb-4">
+              در این بخش می‌توانید برای هر تعداد فیلد عددی موجود در پاسخ این وب‌سرویس (به عنوان مثال CPU، حافظه، تعداد تراکنش‌ها و غیره) حد آستانه بالا و پایین تعیین کنید. در صورتی که پاسخ دریافتی خارج از این محدوده باشد، وضعیت وب‌سرویس به هشدار (WARN) تغییر کرده و سیستم هشدار ثبت خواهد کرد. این بخش کاملاً اختیاری است.
+            </p>
+
+            {useNumericThresholds ? (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-slate-50/50 rounded-2xl border border-slate-100 p-4 space-y-4"
+              >
+                {/* Add form for threshold */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs items-end bg-white p-4 rounded-xl border border-slate-200/50">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">مسیر فیلد (JSON Path)</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: data.cpu_usage"
+                      value={newThreshFieldPath}
+                      onChange={(e) => setNewThreshFieldPath(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-mono font-english text-xs bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">نام یا عنوان هشداری (فارسی)</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: لود سی‌پی‌یو"
+                      value={newThreshLabel}
+                      onChange={(e) => setNewThreshLabel(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">حداقل مجاز (Lower Limit)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="بدون حداقل"
+                      value={newThreshMin}
+                      onChange={(e) => setNewThreshMin(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">حداکثر مجاز (Upper Limit)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="بدون حداکثر"
+                      value={newThreshMax}
+                      onChange={(e) => setNewThreshMax(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleAddThreshold}
+                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      افزودن به لیست حد آستانه‌ها
+                    </button>
+                  </div>
+                </div>
+
+                {/* Detected Numeric Fields Shortcuts */}
+                {testResult && testResult.success && testResult.body && (
+                  <div className="bg-amber-50/20 border border-amber-100/40 rounded-xl p-3.5">
+                    <span className="text-[10px] font-bold text-amber-800 block mb-2">⚡ فیلدهای عددی شناسایی شده در پاسخ تست (کلیک جهت تنظیم سریع):</span>
+                    <div className="flex flex-wrap gap-2">
+                      {getNumericPathsFromObject(testResult.body).map((item) => {
+                        // Check if already in thresholds
+                        const alreadyAdded = numericThresholds.some(t => t.fieldPath === item.path);
+                        return (
+                          <button
+                            key={item.path}
+                            type="button"
+                            disabled={alreadyAdded}
+                            onClick={() => {
+                              setNewThreshFieldPath(item.path);
+                              // Auto-suggest label from last path component
+                              const parts = item.path.split('.');
+                              const lastPart = parts[parts.length - 1];
+                              setNewThreshLabel(lastPart);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono flex items-center gap-1.5 transition-all ${
+                              alreadyAdded 
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' 
+                                : 'bg-white text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200'
+                            }`}
+                          >
+                            <span className="font-bold text-slate-900 font-english">{item.path}</span>
+                            <span className="text-slate-400">({item.value})</span>
+                            {!alreadyAdded && <span className="text-xs text-indigo-500 font-bold font-sans">← انتخاب</span>}
+                          </button>
+                        );
+                      })}
+                      {getNumericPathsFromObject(testResult.body).length === 0 && (
+                        <span className="text-[10px] text-slate-400">هیچ فیلد عددی در پاسخ دریافتی یافت نشد.</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Threshold list table */}
+                <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                  <div className="bg-slate-50/50 px-4 py-2 text-[10px] font-bold text-slate-500 border-b border-slate-100 grid grid-cols-12 gap-2">
+                    <div className="col-span-3">عنوان هشداری فیلد</div>
+                    <div className="col-span-4">مسیر فیلد (JSON Path)</div>
+                    <div className="col-span-2">حداقل مجاز</div>
+                    <div className="col-span-2">حداکثر مجاز</div>
+                    <div className="col-span-1 text-center">حذف</div>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 text-[11px]">
+                    {numericThresholds.map((thresh) => (
+                      <div key={thresh.id} className="px-4 py-2.5 grid grid-cols-12 gap-2 items-center hover:bg-slate-50/30">
+                        <div className="col-span-3 font-bold text-slate-700">{thresh.label}</div>
+                        <div className="col-span-4 font-mono font-english text-xs text-slate-500 select-all">{thresh.fieldPath}</div>
+                        <div className="col-span-2 text-slate-600 font-mono">
+                          {thresh.min !== undefined && thresh.min !== null ? thresh.min : '—'}
+                        </div>
+                        <div className="col-span-2 text-slate-600 font-mono">
+                          {thresh.max !== undefined && thresh.max !== null ? thresh.max : '—'}
+                        </div>
+                        <div className="col-span-1 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveThreshold(thresh.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors inline-flex"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {numericThresholds.length === 0 && (
+                      <div className="p-4 text-center text-slate-400 text-xs">
+                        هیچ آستانه هشدار عددی اختصاصی برای این سرویس تعریف نشده است.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="bg-slate-50/40 rounded-xl border border-slate-100 p-4 text-center text-slate-400 text-[11px] font-medium">
+                تنظیمات اختیاری حد آستانه غیر فعال است. وب‌سرویس با استفاده از روال مانیتورینگ عمومی (کد وضعیت و زمان پاسخ) ارزیابی خواهد شد.
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
               id="btn-submit-service"
@@ -667,7 +1029,12 @@ export default function ServiceCreator({ groups, onAddService, mockEndpoints }: 
               disabled={isSubmitting}
               className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
             >
-              {isSubmitting ? 'در حال ثبت و فعال‌سازی مانیتور...' : 'ثبت نهایی وب‌سرویس مانیتورینگ'}
+              {isSubmitting 
+                ? 'در حال ثبت و فعال‌سازی مانیتور...' 
+                : selectedServiceId === 'NEW' 
+                  ? 'ثبت نهایی وب‌سرویس مانیتورینگ' 
+                  : 'ذخیره تغییرات و بروزرسانی آستانه‌های وب‌سرویس'
+              }
             </button>
           </div>
         </form>
