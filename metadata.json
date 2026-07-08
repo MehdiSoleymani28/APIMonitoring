@@ -1,0 +1,6 @@
+{
+  "name": "Web Service Monitor",
+  "description": "سامانه هوشمند مانیتورینگ وضعیت وب‌سرویس‌ها، کنترل فیلدهای پاسخ و ثبت هشدارهای لحظه‌ای",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
